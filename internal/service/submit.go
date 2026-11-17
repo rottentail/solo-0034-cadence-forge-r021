@@ -45,16 +45,14 @@ func (s *Service) Submit(key string, request Request) (domain.Render, error) {
 		if pending >= s.Config.QueueLimit {
 			return domain.Capacity("render queue is full")
 		}
-		sheets := st.Sheets[request.SheetID]
-		recipes := st.Recipes[request.RecipeID]
-		if request.SheetRevision > len(sheets) {
+		sheet, ok := st.SheetHistory(request.SheetID).At(request.SheetRevision)
+		if !ok {
 			return domain.Missing("sheet revision", request.SheetID)
 		}
-		if request.RecipeRevision > len(recipes) {
+		recipe, ok := st.RecipeHistory(request.RecipeID).At(request.RecipeRevision)
+		if !ok {
 			return domain.Missing("recipe revision", request.RecipeID)
 		}
-		sheet := sheets[request.SheetRevision-1]
-		recipe := recipes[request.RecipeRevision-1]
 		sources := map[string]domain.Source{}
 		for _, p := range sheet.Spans {
 			sources[p.SourceID] = st.Sources[p.SourceID]

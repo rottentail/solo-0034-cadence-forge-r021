@@ -15,24 +15,28 @@ func (s *Service) SaveSheet(id string, expected int, input domain.Sheet) (domain
 	}
 	var out domain.Sheet
 	err := s.Store.Update(func(st *domain.State) error {
-		versions := st.Sheets[id]
-		if len(versions) != expected {
-			return domain.Conflict("sheet revision changed")
-		}
-		if expected == 0 && len(versions) > 0 {
+		history := st.SheetHistory(id)
+		if expected == 0 && history != nil {
 			return domain.Conflict("sheet already exists")
 		}
-		if expected > 0 && len(versions) == 0 {
+		if expected > 0 && history == nil {
 			return domain.Missing("sheet", id)
 		}
-		if err := domain.ValidateSheet(input, st.Sources); err != nil {
-			return err
+		if history == nil {
+			history = domain.NewHistory[domain.Sheet]()
+			st.Sheets[id] = history
 		}
 		input.ID = id
-		input.Revision = len(versions) + 1
 		input.CreatedAt = time.Now().UTC()
-		out = input
-		st.Sheets[id] = append(versions, input)
+		// Validity is domain-specific (source existence, interval bounds); the
+		// generic history only runs it inside the optimistic revision protocol.
+		committed, err := history.Append(expected, input, func(candidate domain.Sheet) error {
+			return domain.ValidateSheet(candidate, st.Sources)
+		})
+		if err != nil {
+			return err
+		}
+		out = committed
 		st.Emit(id, "sheet.revised", "immutable timeline revision saved")
 		return nil
 	})
@@ -43,16 +47,14 @@ func (s *Service) Preview(sheetID, recipeID string) (domain.Plan, error) {
 	if err != nil {
 		return domain.Plan{}, err
 	}
-	sheets := st.Sheets[sheetID]
-	recipes := st.Recipes[recipeID]
-	if len(sheets) == 0 {
+	sheet, ok := st.SheetHistory(sheetID).Latest()
+	if !ok {
 		return domain.Plan{}, domain.Missing("sheet", sheetID)
 	}
-	if len(recipes) == 0 {
+	recipe, ok := st.RecipeHistory(recipeID).Latest()
+	if !ok {
 		return domain.Plan{}, domain.Missing("recipe", recipeID)
 	}
-	sheet := sheets[len(sheets)-1]
-	recipe := recipes[len(recipes)-1]
 	plan, err := timeline.Build(sheet, recipe, st.Sources)
 	if err != nil {
 		return plan, err

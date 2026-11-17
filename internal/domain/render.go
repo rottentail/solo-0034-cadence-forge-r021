@@ -42,18 +42,30 @@ type Event struct {
 	At       time.Time `json:"at"`
 }
 type State struct {
-	Schema   int                 `json:"schema"`
-	Sequence uint64              `json:"sequence"`
-	Sources  map[string]Source   `json:"sources"`
-	Sheets   map[string][]Sheet  `json:"sheets"`
-	Recipes  map[string][]Recipe `json:"recipes"`
-	Renders  map[string]Render   `json:"renders"`
-	Events   []Event             `json:"events"`
+	Schema   int               `json:"schema"`
+	Sequence uint64            `json:"sequence"`
+	Sources  map[string]Source `json:"sources"`
+	// Sheets and Recipes keep their legacy JSON keys and bare-array values
+	// (see History.MarshalJSON); only the in-memory boundary changes, moving
+	// revision protocol and immutability into the shared History type while
+	// sheet/recipe validity remains domain-specific.
+	Sheets  map[string]*History[Sheet]  `json:"sheets"`
+	Recipes map[string]*History[Recipe] `json:"recipes"`
+	Renders map[string]Render           `json:"renders"`
+	Events  []Event                     `json:"events"`
 }
 
 func Empty() State {
-	return State{Schema: 1, Sources: map[string]Source{}, Sheets: map[string][]Sheet{}, Recipes: map[string][]Recipe{}, Renders: map[string]Render{}, Events: []Event{}}
+	return State{Schema: 1, Sources: map[string]Source{}, Sheets: map[string]*History[Sheet]{}, Recipes: map[string]*History[Recipe]{}, Renders: map[string]Render{}, Events: []Event{}}
 }
+
+// SheetHistory returns the revision history of a sheet, or nil if the sheet
+// has never been created. Nil-safe so callers do not special-case missing keys.
+func (s *State) SheetHistory(id string) *History[Sheet] { return s.Sheets[id] }
+
+// RecipeHistory returns the revision history of a recipe, or nil if the recipe
+// has never been created.
+func (s *State) RecipeHistory(id string) *History[Recipe] { return s.Recipes[id] }
 func (s *State) Emit(id, kind, detail string) {
 	s.Sequence++
 	s.Events = append(s.Events, Event{Sequence: s.Sequence, Subject: id, Kind: kind, Detail: detail, At: time.Now().UTC()})

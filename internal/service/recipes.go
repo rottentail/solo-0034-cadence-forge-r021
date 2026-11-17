@@ -13,17 +13,22 @@ func (s *Service) SaveRecipe(id string, expected int, input domain.Recipe) (doma
 	}
 	var out domain.Recipe
 	err := s.Store.Update(func(st *domain.State) error {
-		versions := st.Recipes[id]
-		if len(versions) != expected {
-			return domain.Conflict("recipe revision changed")
-		}
-		if expected > 0 && len(versions) == 0 {
+		history := st.RecipeHistory(id)
+		if expected > 0 && history == nil {
 			return domain.Missing("recipe", id)
 		}
+		if history == nil {
+			history = domain.NewHistory[domain.Recipe]()
+			st.Recipes[id] = history
+		}
 		input.ID = id
-		input.Revision = len(versions) + 1
-		out = input
-		st.Recipes[id] = append(versions, input)
+		// Recipe validity remains recipe-domain knowledge; the shared history
+		// supplies only revision numbering, optimistic conflict and freezing.
+		committed, err := history.Append(expected, input, domain.ValidateRecipe)
+		if err != nil {
+			return err
+		}
+		out = committed
 		st.Emit(id, "recipe.revised", input.Format)
 		return nil
 	})

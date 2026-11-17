@@ -47,18 +47,25 @@ func (s *Service) RetireSource(id string) error {
 		if _, ok := st.Sources[id]; !ok {
 			return domain.Missing("source", id)
 		}
-		for _, versions := range st.Sheets {
-			for _, sheet := range versions {
+		for _, history := range st.Sheets {
+			var conflict error
+			history.Range(func(_ int, sheet domain.Sheet) bool {
 				for _, p := range sheet.Spans {
 					if p.SourceID == id {
-						return domain.Conflict("source is referenced by sheet history")
+						conflict = domain.Conflict("source is referenced by sheet history")
+						return true
 					}
 				}
 				for _, cue := range sheet.Cues {
 					if cue.SourceID == id {
-						return domain.Conflict("source is referenced by cue history")
+						conflict = domain.Conflict("source is referenced by cue history")
+						return true
 					}
 				}
+				return false
+			})
+			if conflict != nil {
+				return conflict
 			}
 		}
 		for _, r := range st.Renders {

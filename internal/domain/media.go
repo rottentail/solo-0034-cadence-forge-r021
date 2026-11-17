@@ -41,6 +41,29 @@ type Sheet struct {
 	Cues      []Cue     `json:"cues"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// withRevision is service-managed revision assignment; clients never send a
+// trusted revision and never call this directly. It is a value-receiver
+// functional method so it also works when Sheet is a generic type parameter.
+func (s Sheet) withRevision(revision int) Sheet {
+	s.Revision = revision
+	return s
+}
+
+// freezeCopy returns an element whose slice backing arrays cannot alias the
+// caller's request object. Committed sheets are immutable facts, so this copy
+// happens once at the history boundary rather than on every read.
+func (s Sheet) freezeCopy() *Sheet {
+	frozen := s
+	if s.Spans != nil {
+		frozen.Spans = append([]Span(nil), s.Spans...)
+	}
+	if s.Cues != nil {
+		frozen.Cues = append([]Cue(nil), s.Cues...)
+	}
+	return &frozen
+}
+
 type Recipe struct {
 	ID         string  `json:"id"`
 	Revision   int     `json:"revision"`
@@ -53,6 +76,22 @@ type Recipe struct {
 	Normalize  bool    `json:"normalize"`
 	TargetLUFS float64 `json:"target_lufs"`
 }
+
+// withRevision is service-managed revision assignment for recipes. Value
+// receiver so the functional form also applies through a generic parameter.
+func (r Recipe) withRevision(revision int) Recipe {
+	r.Revision = revision
+	return r
+}
+
+// freezeCopy returns the committed recipe. A recipe holds only scalar fields,
+// so the value itself is the immutable fact; the method exists to satisfy the
+// shared history contract alongside reference-bearing types such as Sheet.
+func (r Recipe) freezeCopy() *Recipe {
+	frozen := r
+	return &frozen
+}
+
 type Placement struct {
 	SourceID    string  `json:"source_id"`
 	SourceInMS  int64   `json:"source_in_ms"`

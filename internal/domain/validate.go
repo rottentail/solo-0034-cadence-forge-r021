@@ -83,30 +83,44 @@ func ValidateState(s State) error {
 			return fmt.Errorf("invalid source %s", id)
 		}
 	}
-	for id, versions := range s.Sheets {
-		if len(versions) == 0 {
+	for id, history := range s.Sheets {
+		if history.Len() == 0 {
 			return fmt.Errorf("empty sheet history")
 		}
-		for i, v := range versions {
-			if v.ID != id || v.Revision != i+1 {
-				return fmt.Errorf("invalid sheet history")
+		var broken error
+		history.Range(func(rev int, v Sheet) bool {
+			if v.ID != id || v.Revision != rev {
+				broken = fmt.Errorf("invalid sheet history")
+				return true
 			}
 			if err := ValidateSheet(v, s.Sources); err != nil {
-				return err
+				broken = err
+				return true
 			}
+			return false
+		})
+		if broken != nil {
+			return broken
 		}
 	}
-	for id, versions := range s.Recipes {
-		if len(versions) == 0 {
+	for id, history := range s.Recipes {
+		if history.Len() == 0 {
 			return fmt.Errorf("empty recipe history")
 		}
-		for i, v := range versions {
-			if v.ID != id || v.Revision != i+1 {
-				return fmt.Errorf("invalid recipe history")
+		var broken error
+		history.Range(func(rev int, v Recipe) bool {
+			if v.ID != id || v.Revision != rev {
+				broken = fmt.Errorf("invalid recipe history")
+				return true
 			}
 			if err := ValidateRecipe(v); err != nil {
-				return err
+				broken = err
+				return true
 			}
+			return false
+		})
+		if broken != nil {
+			return broken
 		}
 	}
 	keys := map[string]bool{}
